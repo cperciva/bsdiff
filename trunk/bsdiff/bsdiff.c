@@ -39,7 +39,12 @@
 #define O_BINARY 0
 #endif
 
-#define MIN(x,y) (((x)<(y)) ? (x) : (y))
+#define MIN(x, y) (((x) < (y)) ? (x) : (y))
+#define SWAP(x, y, tmp) do {	\
+	(tmp) = (x);		\
+	(x) = (y);		\
+	(y) = (tmp);		\
+} while (0)
 
 static void
 split(off_t *I, off_t *V, off_t start, off_t len, off_t h)
@@ -56,9 +61,7 @@ split(off_t *I, off_t *V, off_t start, off_t len, off_t h)
 					j = 0;
 				};
 				if (V[I[k + i] + h] == x) {
-					tmp = I[k + j];
-					I[k + j] = I[k + i];
-					I[k + i] = tmp;
+					SWAP(I[k + i], I[k + j], tmp);
 					j++;
 				};
 			};
@@ -89,14 +92,10 @@ split(off_t *I, off_t *V, off_t start, off_t len, off_t h)
 		if (V[I[i] + h] < x) {
 			i++;
 		} else if (V[I[i] + h] == x) {
-			tmp = I[i];
-			I[i] = I[jj + j];
-			I[jj + j] = tmp;
+			SWAP(I[i], I[jj + j], tmp);
 			j++;
 		} else {
-			tmp = I[i];
-			I[i] = I[kk + k];
-			I[kk + k] = tmp;
+			SWAP(I[i], I[kk + k], tmp);
 			k++;
 		};
 	};
@@ -105,9 +104,7 @@ split(off_t *I, off_t *V, off_t start, off_t len, off_t h)
 		if(V[I[jj + j] + h] == x) {
 			j++;
 		} else {
-			tmp = I[jj + j];
-			I[jj + j] = I[kk + k];
-			I[kk + k] = tmp;
+			SWAP(I[jj + j], I[kk + k], tmp);
 			k++;
 		};
 	};
