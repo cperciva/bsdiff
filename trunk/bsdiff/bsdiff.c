@@ -30,6 +30,7 @@
 #include <err.h>
 #include <fcntl.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -124,7 +125,7 @@ split(off_t *I, off_t *V, off_t start, off_t len, off_t h)
 }
 
 static void
-qsufsort(off_t *I, off_t *V, u_char *old, off_t oldsize)
+qsufsort(off_t *I, off_t *V, uint8_t *old, off_t oldsize)
 {
 	off_t buckets[256];
 	off_t i, h, len;
@@ -174,7 +175,7 @@ qsufsort(off_t *I, off_t *V, u_char *old, off_t oldsize)
 }
 
 static off_t
-matchlen(u_char *old, off_t oldsize, u_char *new, off_t newsize)
+matchlen(uint8_t *old, off_t oldsize, uint8_t *new, off_t newsize)
 {
 	off_t i;
 
@@ -186,7 +187,7 @@ matchlen(u_char *old, off_t oldsize, u_char *new, off_t newsize)
 }
 
 static off_t
-search(off_t *I, u_char *old, off_t oldsize, u_char *new, off_t newsize,
+search(off_t *I, uint8_t *old, off_t oldsize, uint8_t *new, off_t newsize,
     off_t st, off_t en, off_t *pos)
 {
 	off_t x, y;
@@ -213,7 +214,7 @@ search(off_t *I, u_char *old, off_t oldsize, u_char *new, off_t newsize,
 }
 
 static void
-offtout(off_t x, u_char *buf)
+offtout(off_t x, uint8_t *buf)
 {
 	off_t y;
 
@@ -239,7 +240,7 @@ int
 main(int argc, char *argv[])
 {
 	int fd;
-	u_char *old, *new;
+	uint8_t *old, *new;
 	off_t oldsize, newsize;
 	off_t *I, *V;
 	off_t scan, pos, len;
@@ -249,9 +250,9 @@ main(int argc, char *argv[])
 	off_t overlap, Ss, lens;
 	off_t i;
 	off_t dblen, eblen;
-	u_char *db, *eb;
-	u_char buf[8];
-	u_char header[32];
+	uint8_t *db, *eb;
+	uint8_t buf[8];
+	uint8_t header[32];
 	FILE * pf;
 	BZFILE * pfbz2;
 	int bz2err;
