@@ -25,9 +25,12 @@
  */
 
 #include <sys/types.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
 
 #include <bzlib.h>
 #include <err.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -83,9 +86,9 @@ search(size_t *I, uint8_t *old, size_t oldsize, uint8_t *new, size_t newsize,
 }
 
 static void
-offtout(off_t x, uint8_t *buf)
+offtout(int64_t x, uint8_t *buf)
 {
-	off_t y;
+	uint64_t y;
 
 	if (x < 0)
 		y = -x;
@@ -105,20 +108,85 @@ offtout(off_t x, uint8_t *buf)
 		buf[7] |= 0x80;
 }
 
+/**
+ * mapfile(name, fd, len):
+ * Open the file ${name} and map it into memory.  Set ${fd} to the file
+ * descriptor and ${len} to the file length, and return a pointer to the
+ * mapped data.
+ */
+static void *
+mapfile(const char * name, int * fd, size_t * len)
+{
+	struct stat sb;
+	void * ptr;
+	int d;
+
+	/* Open the file for reading. */
+	if ((d = open(name, O_RDONLY)) == -1)
+		goto err0;
+
+	/* Stat the file and make sure it's not too big. */
+	if (fstat(d, &sb))
+		goto err1;
+	if ((sb.st_size < 0) ||
+	    (uintmax_t)(sb.st_size) > (uintmax_t)(SIZE_MAX)) {
+		errno = EFBIG;
+		goto err1;
+	}
+
+	/* Map the file into memory. */
+	if ((ptr = mmap(NULL, sb.st_size, PROT_READ, 0, d, 0)) == MAP_FAILED)
+		goto err1;
+
+	/* Return the descriptor, length, and pointer. */
+	*fd = d;
+	*len = sb.st_size;
+	return (ptr);
+
+err1:
+	close(d);
+err0:
+	/* Failure! */
+	return (NULL);
+}
+
+/**
+ * unmapfile(ptr, fd, len):
+ * Tear down the file mapping created by mapfile.
+ */
+static int
+unmapfile(void * ptr, int fd, size_t len)
+{
+	int rc = 0;
+
+	/* Only unmap non-zero lengths -- POSIX stupidity. */
+	if (len > 0) {
+		if (munmap(ptr, len))
+			rc = -1;
+	}
+
+	/* Close the file. */
+	if (close(fd))
+		rc = -1;
+
+	/* Return status code. */
+	return (rc);
+}
+
 int
 main(int argc, char *argv[])
 {
-	int fd;
+	int oldfd, newfd;
 	uint8_t *old, *new;
 	size_t oldsize, newsize;
 	size_t *I;
-	off_t scan, pos, len;
-	off_t lastscan, lastpos, lastoffset;
-	off_t oldscore, scsc;
-	off_t s, Sf, lenf, Sb, lenb;
-	off_t overlap, Ss, lens;
-	off_t i;
-	off_t dblen, eblen;
+	size_t scan, pos, len;
+	size_t lastscan, lastpos, lastoffset;
+	size_t oldscore, scsc;
+	size_t s, Sf, lenf, Sb, lenb;
+	size_t overlap, Ss, lens;
+	size_t i;
+	size_t dblen, eblen;
 	uint8_t *db, *eb;
 	uint8_t buf[8];
 	uint8_t header[32];
@@ -129,28 +197,17 @@ main(int argc, char *argv[])
 	if (argc != 4)
 		errx(1, "usage: %s oldfile newfile patchfile\n", argv[0]);
 
-	/* Allocate oldsize+1 bytes instead of oldsize bytes to ensure
-		that we never try to malloc(0) and get a NULL pointer */
-	if (((fd = open(argv[1], O_RDONLY | O_BINARY, 0)) < 0) ||
-	    ((oldsize = lseek(fd, 0, SEEK_END)) == -1) ||
-	    ((old = malloc(oldsize + 1)) == NULL) ||
-	    (lseek(fd, 0, SEEK_SET) != 0) ||
-	    (read(fd, old, oldsize) != oldsize) ||
-	    (close(fd) == -1))
-		err(1, "%s", argv[1]);
+	/* Map the old file into memory. */
+	if ((old = mapfile(argv[1], &oldfd, &oldsize)) == NULL)
+		err(1, "Cannot map file: %s", argv[1]);
 
+	/* Suffix sort the old file. */
 	if ((I = qsufsort(old, oldsize)) == NULL)
 		err(1, NULL);
 
-	/* Allocate newsize+1 bytes instead of newsize bytes to ensure
-		that we never try to malloc(0) and get a NULL pointer */
-	if (((fd = open(argv[2], O_RDONLY | O_BINARY, 0)) < 0) ||
-	    ((newsize = lseek(fd, 0, SEEK_END)) == -1) ||
-	    ((new = malloc(newsize + 1)) == NULL) ||
-	    (lseek(fd, 0, SEEK_SET) != 0) ||
-	    (read(fd, new, newsize) != newsize) ||
-	    (close(fd) == -1))
-		err(1, "%s", argv[2]);
+	/* Map the new file into memory. */
+	if ((new = mapfile(argv[2], &newfd, &newsize)) == NULL)
+		err(1, "Cannot map file: %s", argv[2]);
 
 	if (((db = malloc(newsize + 1)) == NULL) ||
 	    ((eb = malloc(newsize + 1)) == NULL))
@@ -218,7 +275,7 @@ main(int argc, char *argv[])
 				if (old[lastpos + i] == new[lastscan + i])
 					s++;
 				i++;
-				if (s * 2 - i > Sf * 2 - lenf) {
+				if (s * 2 + lenf > Sf * 2 + i) {
 					Sf = s;
 					lenf = i;
 				};
@@ -232,7 +289,7 @@ main(int argc, char *argv[])
 				    (pos >= i); i++) {
 					if (old[pos - i] == new[scan - i])
 						s++;
-					if (s * 2 - i > Sb * 2 - lenb) {
+					if (s * 2 + lenb > Sb * 2 + i) {
 						Sb = s;
 						lenb = i;
 					};
@@ -251,7 +308,7 @@ main(int argc, char *argv[])
 					if (new[scan - lenb + i] ==
 					    old[pos - lenb + i])
 						s--;
-					if (s > Ss) {
+					if ((ssize_t)s > (ssize_t)Ss) {
 						Ss = s;
 						lens = i + 1;
 					};
@@ -295,7 +352,7 @@ main(int argc, char *argv[])
 		errx(1, "BZ2_bzWriteClose, bz2err = %d", bz2err);
 
 	/* Compute size of compressed ctrl data */
-	if ((len = ftello(pf)) == -1)
+	if ((len = ftello(pf)) == (size_t)(-1))
 		err(1, "ftello");
 	offtout(len - 32, header + 8);
 
@@ -310,7 +367,7 @@ main(int argc, char *argv[])
 		errx(1, "BZ2_bzWriteClose, bz2err = %d", bz2err);
 
 	/* Compute size of compressed diff data */
-	if ((newsize = ftello(pf)) == -1)
+	if ((newsize = ftello(pf)) == (size_t)(-1))
 		err(1, "ftello");
 	offtout(newsize - len, header + 16);
 
@@ -336,8 +393,10 @@ main(int argc, char *argv[])
 	free(db);
 	free(eb);
 	free(I);
-	free(old);
-	free(new);
+
+	/* Release memory mappings. */
+	unmapfile(new, newfd, newsize);
+	unmapfile(old, oldfd, oldsize);
 
 	return 0;
 }
