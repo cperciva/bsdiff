@@ -133,7 +133,7 @@ qsufsort(off_t *I, off_t *V, uint8_t *old, off_t oldsize)
 		buckets[old[i]]++;
 	for (i = 1; i < 256; i++)
 		buckets[i] += buckets[i - 1];
-	for(i=255; i>0; i--)
+	for (i = 255; i > 0; i--)
 		buckets[i] = buckets[i - 1];
 	buckets[0] = 0;
 
