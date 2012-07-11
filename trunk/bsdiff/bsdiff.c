@@ -38,6 +38,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "elasticarray.h"
 #include "qsufsort.h"
 
 #ifndef O_BINARY
@@ -45,6 +46,14 @@
 #endif
 
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
+
+/* Alignment segment. */
+struct alignseg {
+	uint64_t difflen;
+	uint64_t copylen;
+	int64_t seeklen;
+};
+ELASTICARRAY_DECL(ALIGNMENT, alignment, struct alignseg);
 
 static size_t
 matchlen(uint8_t *old, size_t oldsize, uint8_t *new, size_t newsize)
@@ -180,6 +189,8 @@ main(int argc, char *argv[])
 	uint8_t *old, *new;
 	size_t oldsize, newsize;
 	size_t *I;
+	ALIGNMENT A;
+	struct alignseg aseg;
 	size_t scan, pos, len;
 	size_t lastscan, lastpos, lastoffset;
 	size_t oldscore, scsc;
@@ -188,7 +199,7 @@ main(int argc, char *argv[])
 	size_t i;
 	size_t dblen, eblen;
 	uint8_t *db, *eb;
-	uint8_t buf[8];
+	uint8_t buf[24];
 	uint8_t header[32];
 	FILE * pf;
 	BZFILE * pfbz2;
@@ -208,6 +219,10 @@ main(int argc, char *argv[])
 	/* Map the new file into memory. */
 	if ((new = mapfile(argv[2], &newfd, &newsize)) == NULL)
 		err(1, "Cannot map file: %s", argv[2]);
+
+	/* Initialize empty alignment array. */
+	if ((A = alignment_init(0)) == NULL)
+		err(1, NULL);
 
 	if (((db = malloc(newsize + 1)) == NULL) ||
 	    ((eb = malloc(newsize + 1)) == NULL))
@@ -236,9 +251,7 @@ main(int argc, char *argv[])
 	if (fwrite(header, 32, 1, pf) != 1)
 		err(1, "fwrite(%s)", argv[3]);
 
-	/* Compute the differences, writing ctrl as we go */
-	if ((pfbz2 = BZ2_bzWriteOpen(&bz2err, pf, 9, 0, 0)) == NULL)
-		errx(1, "BZ2_bzWriteOpen, bz2err = %d", bz2err);
+	/* Scan through new, constructing an alignment against old. */
 	scan = 0;
 	len = 0;
 	pos = 0;
@@ -327,26 +340,34 @@ main(int argc, char *argv[])
 			dblen += lenf;
 			eblen += (scan - lenb) - (lastscan + lenf);
 
-			offtout(lenf, buf);
-			BZ2_bzWrite(&bz2err, pfbz2, buf, 8);
-			if (bz2err != BZ_OK)
-				errx(1, "BZ2_bzWrite, bz2err = %d", bz2err);
-
-			offtout((scan - lenb) - (lastscan + lenf), buf);
-			BZ2_bzWrite(&bz2err, pfbz2, buf, 8);
-			if (bz2err != BZ_OK)
-				errx(1, "BZ2_bzWrite, bz2err = %d", bz2err);
-
-			offtout((pos - lenb) - (lastpos + lenf), buf);
-			BZ2_bzWrite(&bz2err, pfbz2, buf, 8);
-			if (bz2err != BZ_OK)
-				errx(1, "BZ2_bzWrite, bz2err = %d", bz2err);
+			/* Push this segment onto our alignment array. */
+			aseg.difflen = lenf;
+			aseg.copylen = (scan - lenb) - (lastscan + lenf);
+			aseg.seeklen = (pos - lenb) - (lastpos + lenf);
+			if (alignment_append(A, &aseg, 1))
+				err(1, NULL);
 
 			lastscan = scan - lenb;
 			lastpos = pos - lenb;
 			lastoffset = pos - scan;
 		};
 	};
+
+	/* Start writing control tuples. */
+	if ((pfbz2 = BZ2_bzWriteOpen(&bz2err, pf, 9, 0, 0)) == NULL)
+		errx(1, "BZ2_bzWriteOpen, bz2err = %d", bz2err);
+
+	/* Read through the alignment array, writing out control tuples. */
+	for (i = 0; i < alignment_getsize(A); i++) {
+		offtout(alignment_get(A, i)->difflen, &buf[0]);
+		offtout(alignment_get(A, i)->copylen, &buf[8]);
+		offtout(alignment_get(A, i)->seeklen, &buf[16]);
+		BZ2_bzWrite(&bz2err, pfbz2, buf, 24);
+		if (bz2err != BZ_OK)
+			errx(1, "BZ2_bzWrite, bz2err = %d", bz2err);
+	}
+
+	/* We've finished writing control tuples. */
 	BZ2_bzWriteClose(&bz2err, pfbz2, 0, NULL, NULL);
 	if (bz2err != BZ_OK)
 		errx(1, "BZ2_bzWriteClose, bz2err = %d", bz2err);
