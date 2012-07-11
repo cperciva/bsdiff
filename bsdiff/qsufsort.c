@@ -28,6 +28,8 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+#include "qsufsort.h"
+
 #define DONEMASK ((size_t)(1) << (sizeof(size_t) * 8 - 1))
 #define SWAP(x, y, tmp) do {	\
 	(tmp) = (x);		\
