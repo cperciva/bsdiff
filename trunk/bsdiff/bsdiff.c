@@ -191,14 +191,15 @@ main(int argc, char *argv[])
 	size_t *I;
 	ALIGNMENT A;
 	struct alignseg aseg;
+	struct alignseg * asegp;
 	size_t scan, pos, len;
 	size_t lastscan, lastpos, lastoffset;
 	size_t oldscore, scsc;
 	size_t s, Sf, lenf, Sb, lenb;
 	size_t overlap, Ss, lens;
-	size_t i;
+	size_t i, j;
 	size_t dblen, eblen;
-	uint8_t *db, *eb;
+	uint8_t *db = NULL, *eb = NULL;
 	uint8_t buf[24];
 	uint8_t header[32];
 	FILE * pf;
@@ -223,33 +224,6 @@ main(int argc, char *argv[])
 	/* Initialize empty alignment array. */
 	if ((A = alignment_init(0)) == NULL)
 		err(1, NULL);
-
-	if (((db = malloc(newsize + 1)) == NULL) ||
-	    ((eb = malloc(newsize + 1)) == NULL))
-		err(1,NULL);
-	dblen = 0;
-	eblen = 0;
-
-	/* Create the patch file */
-	if ((pf = fopen(argv[3], "wb")) == NULL)
-		err(1, "%s", argv[3]);
-
-	/* Header is
-		0	8	 "BSDIFF40"
-		8	8	length of bzip2ed ctrl block
-		16	8	length of bzip2ed diff block
-		24	8	length of new file */
-	/* File is
-		0	32	Header
-		32	??	Bzip2ed ctrl block
-		??	??	Bzip2ed diff block
-		??	??	Bzip2ed extra block */
-	memcpy(header, "BSDIFF40", 8);
-	offtout(0, header + 8);
-	offtout(0, header + 16);
-	offtout(newsize, header + 24);
-	if (fwrite(header, 32, 1, pf) != 1)
-		err(1, "fwrite(%s)", argv[3]);
 
 	/* Scan through new, constructing an alignment against old. */
 	scan = 0;
@@ -331,15 +305,6 @@ main(int argc, char *argv[])
 				lenb -= lens;
 			};
 
-			for (i = 0; i < lenf; i++)
-				db[dblen + i] = new[lastscan + i] -
-				    old[lastpos + i];
-			for (i = 0; i < (scan - lenb) - (lastscan + lenf); i++)
-				eb[eblen + i] = new[lastscan + lenf + i];
-
-			dblen += lenf;
-			eblen += (scan - lenb) - (lastscan + lenf);
-
 			/* Push this segment onto our alignment array. */
 			aseg.difflen = lenf;
 			aseg.copylen = (scan - lenb) - (lastscan + lenf);
@@ -352,6 +317,27 @@ main(int argc, char *argv[])
 			lastoffset = pos - scan;
 		};
 	};
+
+	/* Create the patch file */
+	if ((pf = fopen(argv[3], "wb")) == NULL)
+		err(1, "%s", argv[3]);
+
+	/* Header is
+		0	8	 "BSDIFF40"
+		8	8	length of bzip2ed ctrl block
+		16	8	length of bzip2ed diff block
+		24	8	length of new file */
+	/* File is
+		0	32	Header
+		32	??	Bzip2ed ctrl block
+		??	??	Bzip2ed diff block
+		??	??	Bzip2ed extra block */
+	memcpy(header, "BSDIFF40", 8);
+	offtout(0, header + 8);
+	offtout(0, header + 16);
+	offtout(newsize, header + 24);
+	if (fwrite(header, 32, 1, pf) != 1)
+		err(1, "fwrite(%s)", argv[3]);
 
 	/* Start writing control tuples. */
 	if ((pfbz2 = BZ2_bzWriteOpen(&bz2err, pf, 9, 0, 0)) == NULL)
@@ -377,10 +363,34 @@ main(int argc, char *argv[])
 		err(1, "ftello");
 	offtout(len - 32, header + 8);
 
+	/* Construct diff block. */
+	for (dblen = i = 0; i < alignment_getsize(A); i++) {
+		asegp = alignment_get(A, i);
+		dblen += asegp->difflen;
+	}
+	if (dblen > 0) {
+		/* Allocate memory for the block. */
+		if ((db = malloc(dblen)) == NULL)
+			err(1, NULL);
+
+		/* Construct it one segment at a time. */
+		lastscan = 0;
+		lastpos = 0;
+		dblen = 0;
+		for (i = 0; i < alignment_getsize(A); i++) {
+			asegp = alignment_get(A, i);
+			for (j = 0; j < asegp->difflen; j++)
+				db[dblen++] = new[lastscan++] - old[lastpos++];
+			lastscan += asegp->copylen;
+			lastpos += asegp->seeklen;
+		}
+	}
+
 	/* Write compressed diff data */
 	if ((pfbz2 = BZ2_bzWriteOpen(&bz2err, pf, 9, 0, 0)) == NULL)
 		errx(1, "BZ2_bzWriteOpen, bz2err = %d", bz2err);
-	BZ2_bzWrite(&bz2err, pfbz2, db, dblen);
+	if (dblen > 0)
+		BZ2_bzWrite(&bz2err, pfbz2, db, dblen);
 	if (bz2err != BZ_OK)
 		errx(1, "BZ2_bzWrite, bz2err = %d", bz2err);
 	BZ2_bzWriteClose(&bz2err, pfbz2, 0, NULL, NULL);
@@ -392,10 +402,32 @@ main(int argc, char *argv[])
 		err(1, "ftello");
 	offtout(newsize - len, header + 16);
 
+	/* Construct extra block. */
+	for (eblen = i = 0; i < alignment_getsize(A); i++) {
+		asegp = alignment_get(A, i);
+		eblen += asegp->copylen;
+	}
+	if (eblen > 0) {
+		/* Allocate memory for the block. */
+		if ((eb = malloc(eblen)) == NULL)
+			err(1, NULL);
+
+		/* Construct it one segment at a time. */
+		lastscan = 0;
+		eblen = 0;
+		for (i = 0; i < alignment_getsize(A); i++) {
+			asegp = alignment_get(A, i);
+			lastscan += asegp->difflen;
+			for (j = 0; j < asegp->copylen; j++)
+				eb[eblen++] = new[lastscan++];
+		}
+	}
+
 	/* Write compressed extra data */
 	if ((pfbz2 = BZ2_bzWriteOpen(&bz2err, pf, 9, 0, 0)) == NULL)
 		errx(1, "BZ2_bzWriteOpen, bz2err = %d", bz2err);
-	BZ2_bzWrite(&bz2err, pfbz2, eb, eblen);
+	if (eblen > 0)
+		BZ2_bzWrite(&bz2err, pfbz2, eb, eblen);
 	if (bz2err != BZ_OK)
 		errx(1, "BZ2_bzWrite, bz2err = %d", bz2err);
 	BZ2_bzWriteClose(&bz2err, pfbz2, 0, NULL, NULL);
@@ -411,6 +443,7 @@ main(int argc, char *argv[])
 		err(1, "fclose");
 
 	/* Free the memory we used */
+	alignment_free(A);
 	free(db);
 	free(eb);
 	free(I);
