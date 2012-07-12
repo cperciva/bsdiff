@@ -49,9 +49,9 @@
 
 /* Alignment segment. */
 struct alignseg {
-	uint64_t difflen;
-	uint64_t copylen;
-	int64_t seeklen;
+	uint64_t npos;
+	uint64_t opos;
+	uint64_t alen;
 };
 ELASTICARRAY_DECL(ALIGNMENT, alignment, struct alignseg);
 
@@ -191,7 +191,7 @@ main(int argc, char *argv[])
 	size_t *I;
 	ALIGNMENT A;
 	struct alignseg aseg;
-	struct alignseg * asegp;
+	struct alignseg * asegp, * asegp2;
 	size_t scan, pos, len;
 	size_t lastscan, lastpos, lastoffset;
 	size_t oldscore, scsc;
@@ -306,9 +306,9 @@ main(int argc, char *argv[])
 			};
 
 			/* Push this segment onto our alignment array. */
-			aseg.difflen = lenf;
-			aseg.copylen = (scan - lenb) - (lastscan + lenf);
-			aseg.seeklen = (pos - lenb) - (lastpos + lenf);
+			aseg.alen = lenf;
+			aseg.npos = lastscan;
+			aseg.opos = lastpos;
 			if (alignment_append(A, &aseg, 1))
 				err(1, NULL);
 
@@ -317,6 +317,13 @@ main(int argc, char *argv[])
 			lastoffset = pos - scan;
 		};
 	};
+
+	/* Push a final segment onto our alignment array. */
+	aseg.alen = 0;
+	aseg.npos = lastscan;
+	aseg.opos = lastpos;
+	if (alignment_append(A, &aseg, 1))
+		err(1, NULL);
 
 	/* Create the patch file */
 	if ((pf = fopen(argv[3], "wb")) == NULL)
@@ -344,10 +351,22 @@ main(int argc, char *argv[])
 		errx(1, "BZ2_bzWriteOpen, bz2err = %d", bz2err);
 
 	/* Read through the alignment array, writing out control tuples. */
-	for (i = 0; i < alignment_getsize(A); i++) {
-		offtout(alignment_get(A, i)->difflen, &buf[0]);
-		offtout(alignment_get(A, i)->copylen, &buf[8]);
-		offtout(alignment_get(A, i)->seeklen, &buf[16]);
+	lastscan = 0;
+	lastpos = 0;
+	lastoffset = 0;
+	for (i = 0; i + 1 < alignment_getsize(A); i++) {
+		asegp = alignment_get(A, i);
+		asegp2 = alignment_get(A, i + 1);
+
+		/* Diff length is the length of the aligned region. */
+		offtout(asegp->alen, &buf[0]);
+
+		/* Extra length is the gap between this and the next region. */
+		offtout(asegp2->npos - (asegp->npos + asegp->alen), &buf[8]);
+
+		/* Seek length is the difference between positions in old. */
+		offtout(asegp2->opos - (asegp->opos + asegp->alen), &buf[16]);
+
 		BZ2_bzWrite(&bz2err, pfbz2, buf, 24);
 		if (bz2err != BZ_OK)
 			errx(1, "BZ2_bzWrite, bz2err = %d", bz2err);
@@ -364,9 +383,9 @@ main(int argc, char *argv[])
 	offtout(len - 32, header + 8);
 
 	/* Construct diff block. */
-	for (dblen = i = 0; i < alignment_getsize(A); i++) {
+	for (dblen = i = 0; i + 1 < alignment_getsize(A); i++) {
 		asegp = alignment_get(A, i);
-		dblen += asegp->difflen;
+		dblen += asegp->alen;
 	}
 	if (dblen > 0) {
 		/* Allocate memory for the block. */
@@ -374,15 +393,12 @@ main(int argc, char *argv[])
 			err(1, NULL);
 
 		/* Construct it one segment at a time. */
-		lastscan = 0;
-		lastpos = 0;
-		dblen = 0;
-		for (i = 0; i < alignment_getsize(A); i++) {
+		for (dblen = i = 0; i + 1 < alignment_getsize(A); i++) {
 			asegp = alignment_get(A, i);
-			for (j = 0; j < asegp->difflen; j++)
-				db[dblen++] = new[lastscan++] - old[lastpos++];
-			lastscan += asegp->copylen;
-			lastpos += asegp->seeklen;
+			for (j = 0; j < asegp->alen; j++)
+				db[dblen + j] = new[asegp->npos + j] -
+				    old[asegp->opos + j];
+			dblen += asegp->alen;
 		}
 	}
 
@@ -403,9 +419,10 @@ main(int argc, char *argv[])
 	offtout(newsize - len, header + 16);
 
 	/* Construct extra block. */
-	for (eblen = i = 0; i < alignment_getsize(A); i++) {
+	for (eblen = i = 0; i + 1 < alignment_getsize(A); i++) {
 		asegp = alignment_get(A, i);
-		eblen += asegp->copylen;
+		asegp2 = alignment_get(A, i + 1);
+		eblen += asegp2->npos - (asegp->npos + asegp->alen);
 	}
 	if (eblen > 0) {
 		/* Allocate memory for the block. */
@@ -413,13 +430,11 @@ main(int argc, char *argv[])
 			err(1, NULL);
 
 		/* Construct it one segment at a time. */
-		lastscan = 0;
-		eblen = 0;
-		for (i = 0; i < alignment_getsize(A); i++) {
+		for (eblen = i = 0; i + 1 < alignment_getsize(A); i++) {
 			asegp = alignment_get(A, i);
-			lastscan += asegp->difflen;
-			for (j = 0; j < asegp->copylen; j++)
-				eb[eblen++] = new[lastscan++];
+			asegp2 = alignment_get(A, i + 1);
+			for (j = asegp->npos + asegp->alen; j < asegp2->npos; )
+				eb[eblen++] = new[j++];
 		}
 	}
 
