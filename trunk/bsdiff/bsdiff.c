@@ -235,19 +235,48 @@ main(int argc, char *argv[])
 	while (scan < newsize) {
 		oldscore = 0;
 
+		/*
+		 * Look for the next values where new[scan .. scan + len - 1]
+		 * matches old[pos .. pos + len - 1] exactly but they mismatch
+		 * old[scan + lastoffset .. scan + lastoffset + len - 1] in at
+		 * least 8 bytes.
+		 */
 		for (scsc = scan += len; scan < newsize; scan++) {
+			/*
+			 * Find the position in the old string where the string
+			 * new[scan .. newsize - 1] matches best.
+			 */
 			len = search(I, old, oldsize, new + scan, newsize-scan,
-					0, oldsize, &pos);
+			    0, oldsize, &pos);
 
+			/*
+			 * Increment oldscore for every byte between scsc and
+			 * scan + len which matches with our previous offset.
+			 */
 			for( ; scsc < scan + len; scsc++)
 				if((scsc + lastoffset < oldsize) &&
 				    (old[scsc + lastoffset] == new[scsc]))
 					oldscore++;
 
+			/*
+			 * If the old offset matches for the entire length of
+			 * the alignment and that length is non-zero (i.e.,
+			 * the old offset is one of several optimal alignments
+			 * at this position), or the new offset matches 8 or
+			 * more characters which the old offset doesn't match,
+			 * exit the loop.
+			 */
 			if (((len == oldscore) && (len != 0)) || 
 			    (len > oldscore + 8))
 				break;
 
+			/*
+			 * Decrement oldscore if the byte at position scan
+			 * matches using the old offset.  This maintains the
+			 * invariant that upon entering the loop oldscore is
+			 * equal to the number of bytes in new[scan .. scsc]
+			 * which match using the old offset.
+			 */
 			if ((scan + lastoffset < oldsize) &&
 			    (old[scan + lastoffset] == new[scan]))
 				oldscore--;
