@@ -242,6 +242,7 @@ main(int argc, char *argv[])
 		 * least 8 bytes.
 		 */
 		for (scsc = scan += len; scan < newsize; scan++) {
+searchagain:
 			/*
 			 * Find the position in the old string where the string
 			 * new[scan .. newsize - 1] matches best.
@@ -262,12 +263,21 @@ main(int argc, char *argv[])
 			 * If the old offset matches for the entire length of
 			 * the alignment and that length is non-zero (i.e.,
 			 * the old offset is one of several optimal alignments
-			 * at this position), or the new offset matches 8 or
-			 * more characters which the old offset doesn't match,
-			 * exit the loop.
+			 * at this position), continue looking from the end of
+			 * the matched region.
 			 */
-			if (((len == oldscore) && (len != 0)) || 
-			    (len > oldscore + 8))
+			if ((len == oldscore) && (len != 0)) {
+				scan += len;
+				scsc = scan;
+				oldscore = 0;
+				goto searchagain;
+			}
+
+			/*
+			 * If the new offset matches 8 or more characters which
+			 * the previous offset didn't match, exit the loop.
+			 */
+			if (len > oldscore + 8)
 				break;
 
 			/*
@@ -282,69 +292,67 @@ main(int argc, char *argv[])
 				oldscore--;
 		};
 
-		if ((len != oldscore) || (scan == newsize)) {
-			s = 0;
-			Sf = 0;
-			lenf = 0;
-			for (i = 0; (lastscan + i < scan) &&
-			    (lastpos + i < oldsize); ) {
-				if (old[lastpos + i] == new[lastscan + i])
-					s++;
-				i++;
-				if (s * 2 + lenf > Sf * 2 + i) {
-					Sf = s;
-					lenf = i;
-				};
+		s = 0;
+		Sf = 0;
+		lenf = 0;
+		for (i = 0; (lastscan + i < scan) &&
+		    (lastpos + i < oldsize); ) {
+			if (old[lastpos + i] == new[lastscan + i])
+				s++;
+			i++;
+			if (s * 2 + lenf > Sf * 2 + i) {
+				Sf = s;
+				lenf = i;
 			};
-
-			lenb = 0;
-			if (scan < newsize) {
-				s = 0;
-				Sb = 0;
-				for (i = 1; (scan >= lastscan + i) &&
-				    (pos >= i); i++) {
-					if (old[pos - i] == new[scan - i])
-						s++;
-					if (s * 2 + lenb > Sb * 2 + i) {
-						Sb = s;
-						lenb = i;
-					};
-				};
-			};
-
-			if (lastscan + lenf > scan - lenb) {
-				overlap = (lastscan + lenf) - (scan - lenb);
-				s = 0;
-				Ss = 0;
-				lens = 0;
-				for (i = 0; i < overlap; i++) {
-					if (new[lastscan + lenf - overlap + i] ==
-					    old[lastpos + lenf - overlap + i])
-						s++;
-					if (new[scan - lenb + i] ==
-					    old[pos - lenb + i])
-						s--;
-					if ((ssize_t)s > (ssize_t)Ss) {
-						Ss = s;
-						lens = i + 1;
-					};
-				};
-
-				lenf += lens - overlap;
-				lenb -= lens;
-			};
-
-			/* Push this segment onto our alignment array. */
-			aseg.alen = lenf;
-			aseg.npos = lastscan;
-			aseg.opos = lastpos;
-			if (alignment_append(A, &aseg, 1))
-				err(1, NULL);
-
-			lastscan = scan - lenb;
-			lastpos = pos - lenb;
-			lastoffset = pos - scan;
 		};
+
+		lenb = 0;
+		if (scan < newsize) {
+			s = 0;
+			Sb = 0;
+			for (i = 1; (scan >= lastscan + i) &&
+			    (pos >= i); i++) {
+				if (old[pos - i] == new[scan - i])
+					s++;
+				if (s * 2 + lenb > Sb * 2 + i) {
+					Sb = s;
+					lenb = i;
+				};
+			};
+		};
+
+		if (lastscan + lenf > scan - lenb) {
+			overlap = (lastscan + lenf) - (scan - lenb);
+			s = 0;
+			Ss = 0;
+			lens = 0;
+			for (i = 0; i < overlap; i++) {
+				if (new[lastscan + lenf - overlap + i] ==
+				    old[lastpos + lenf - overlap + i])
+					s++;
+				if (new[scan - lenb + i] ==
+				    old[pos - lenb + i])
+					s--;
+				if ((ssize_t)s > (ssize_t)Ss) {
+					Ss = s;
+					lens = i + 1;
+				};
+			};
+
+			lenf += lens - overlap;
+			lenb -= lens;
+		};
+
+		/* Push this segment onto our alignment array. */
+		aseg.alen = lenf;
+		aseg.npos = lastscan;
+		aseg.opos = lastpos;
+		if (alignment_append(A, &aseg, 1))
+			err(1, NULL);
+
+		lastscan = scan - lenb;
+		lastpos = pos - lenb;
+		lastoffset = pos - scan;
 	};
 
 	/* Push a final segment onto our alignment array. */
