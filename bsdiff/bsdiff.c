@@ -233,6 +233,14 @@ main(int argc, char *argv[])
 	lastpos = 0;
 	lastoffset = 0;
 	while (scan < newsize) {
+		/* Push this segment onto our alignment array. */
+		aseg.alen = len;
+		aseg.npos = scan;
+		aseg.opos = pos;
+		if (alignment_append(A, &aseg, 1))
+			err(1, NULL);
+
+		lastoffset = pos - scan;
 		oldscore = 0;
 
 		/*
@@ -291,11 +299,30 @@ searchagain:
 			    (old[scan + lastoffset] == new[scan]))
 				oldscore--;
 		}
+	}
 
+	/* Push a final segment onto our alignment array. */
+	aseg.alen = 0;
+	aseg.npos = scan;
+	aseg.opos = pos;
+	if (alignment_append(A, &aseg, 1))
+		err(1, NULL);
+
+	/* Scan through the alignments, extending them into gaps. */
+	for (j = 0; j + 1 < alignment_getsize(A); j++) {
+		asegp = alignment_get(A, j);
+		asegp2 = alignment_get(A, j + 1);
+
+		lastscan = asegp->npos;
+		lastpos = asegp->opos;
+		lenf = asegp->alen;
+		scan = asegp2->npos;
+		pos = asegp2->opos;
+
+		/* Extend asegp forwards as long as it matches 50%. */
 		s = 0;
 		Sf = 0;
-		lenf = 0;
-		for (i = 0; (lastscan + i < scan) &&
+		for (i = lenf; (lastscan + i < scan) &&
 		    (lastpos + i < oldsize); ) {
 			if (old[lastpos + i] == new[lastscan + i])
 				s++;
@@ -306,6 +333,7 @@ searchagain:
 			}
 		}
 
+		/* Extend asegp2 backwards as long as it matches 50%. */
 		lenb = 0;
 		if (scan < newsize) {
 			s = 0;
@@ -321,6 +349,7 @@ searchagain:
 			}
 		}
 
+		/* If the extended alignments overlap, find the best split. */
 		if (lastscan + lenf > scan - lenb) {
 			overlap = (lastscan + lenf) - (scan - lenb);
 			s = 0;
@@ -343,24 +372,12 @@ searchagain:
 			lenb -= lens;
 		}
 
-		/* Push this segment onto our alignment array. */
-		aseg.alen = lenf;
-		aseg.npos = lastscan;
-		aseg.opos = lastpos;
-		if (alignment_append(A, &aseg, 1))
-			err(1, NULL);
-
-		lastscan = scan - lenb;
-		lastpos = pos - lenb;
-		lastoffset = pos - scan;
+		/* Adjust the regions. */
+		asegp->alen = lenf;
+		asegp2->alen += lenb;
+		asegp2->npos -= lenb;
+		asegp2->opos -= lenb;
 	}
-
-	/* Push a final segment onto our alignment array. */
-	aseg.alen = 0;
-	aseg.npos = lastscan;
-	aseg.opos = lastpos;
-	if (alignment_append(A, &aseg, 1))
-		err(1, NULL);
 
 	/* Create the patch file */
 	if ((pf = fopen(argv[3], "wb")) == NULL)
