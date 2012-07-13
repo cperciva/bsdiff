@@ -84,14 +84,14 @@ search(size_t *I, uint8_t *old, size_t oldsize, uint8_t *new, size_t newsize,
 			*pos = I[en];
 			return y;
 		}
-	};
+	}
 
 	x = st + (en - st)/2;
 	if (memcmp(old + I[x], new, MIN(oldsize - I[x], newsize)) < 0) {
 		return search(I, old, oldsize, new, newsize, x, en, pos);
 	} else {
 		return search(I, old, oldsize, new, newsize, st, x, pos);
-	};
+	}
 }
 
 static void
@@ -284,13 +284,13 @@ searchagain:
 			 * Decrement oldscore if the byte at position scan
 			 * matches using the old offset.  This maintains the
 			 * invariant that upon entering the loop oldscore is
-			 * equal to the number of bytes in new[scan .. scsc]
+			 * equal to the number of bytes in new[scan .. scsc - 1]
 			 * which match using the old offset.
 			 */
 			if ((scan + lastoffset < oldsize) &&
 			    (old[scan + lastoffset] == new[scan]))
 				oldscore--;
-		};
+		}
 
 		s = 0;
 		Sf = 0;
@@ -303,8 +303,8 @@ searchagain:
 			if (s * 2 + lenf > Sf * 2 + i) {
 				Sf = s;
 				lenf = i;
-			};
-		};
+			}
+		}
 
 		lenb = 0;
 		if (scan < newsize) {
@@ -317,9 +317,9 @@ searchagain:
 				if (s * 2 + lenb > Sb * 2 + i) {
 					Sb = s;
 					lenb = i;
-				};
-			};
-		};
+				}
+			}
+		}
 
 		if (lastscan + lenf > scan - lenb) {
 			overlap = (lastscan + lenf) - (scan - lenb);
@@ -336,12 +336,12 @@ searchagain:
 				if ((ssize_t)s > (ssize_t)Ss) {
 					Ss = s;
 					lens = i + 1;
-				};
-			};
+				}
+			}
 
 			lenf += lens - overlap;
 			lenb -= lens;
-		};
+		}
 
 		/* Push this segment onto our alignment array. */
 		aseg.alen = lenf;
@@ -353,7 +353,7 @@ searchagain:
 		lastscan = scan - lenb;
 		lastpos = pos - lenb;
 		lastoffset = pos - scan;
-	};
+	}
 
 	/* Push a final segment onto our alignment array. */
 	aseg.alen = 0;
