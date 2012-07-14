@@ -225,32 +225,21 @@ main(int argc, char *argv[])
 	if ((A = alignment_init(0)) == NULL)
 		err(1, NULL);
 
-	/* Scan through new, constructing an alignment against old. */
-	scan = 0;
-	len = 0;
-	pos = 0;
-	lastscan = 0;
-	lastpos = 0;
+	/* Anchor the alignment at the start of the file. */
+	aseg.alen = aseg.npos = aseg.opos = 0;
+	if (alignment_append(A, &aseg, 1))
+		err(1, NULL);
 	lastoffset = 0;
-	while (scan < newsize) {
-		/* Push this segment onto our alignment array. */
-		aseg.alen = len;
-		aseg.npos = scan;
-		aseg.opos = pos;
-		if (alignment_append(A, &aseg, 1))
-			err(1, NULL);
 
-		lastoffset = pos - scan;
-		oldscore = 0;
-
+	/* Scan through new, constructing an alignment against old. */
+	for (scan = 0; scan < newsize; scan += len) {
 		/*
 		 * Look for the next values where new[scan .. scan + len - 1]
 		 * matches old[pos .. pos + len - 1] exactly but they mismatch
 		 * old[scan + lastoffset .. scan + lastoffset + len - 1] in at
 		 * least 8 bytes.
 		 */
-		for (scsc = scan += len; scan < newsize; scan++) {
-searchagain:
+		for (oldscore = 0, scsc = scan; scan < newsize; scan++) {
 			/*
 			 * Find the position in the old string where the string
 			 * new[scan .. newsize - 1] matches best.
@@ -274,19 +263,23 @@ searchagain:
 			 * at this position), continue looking from the end of
 			 * the matched region.
 			 */
-			if ((len == oldscore) && (len != 0)) {
-				scan += len;
-				scsc = scan;
-				oldscore = 0;
-				goto searchagain;
-			}
+			if ((len == oldscore) && (len != 0))
+				break;
 
 			/*
 			 * If the new offset matches 8 or more characters which
-			 * the previous offset didn't match, exit the loop.
+			 * the previous offset didn't match, record this as a
+			 * new alignment segment.
 			 */
-			if (len > oldscore + 8)
+			if (len > oldscore + 8) {
+				aseg.alen = len;
+				aseg.npos = scan;
+				aseg.opos = pos;
+				if (alignment_append(A, &aseg, 1))
+					err(1, NULL);
+				lastoffset = pos - scan;
 				break;
+			}
 
 			/*
 			 * Decrement oldscore if the byte at position scan
@@ -300,13 +293,6 @@ searchagain:
 				oldscore--;
 		}
 	}
-
-	/* Push a final segment onto our alignment array. */
-	aseg.alen = 0;
-	aseg.npos = scan;
-	aseg.opos = pos;
-	if (alignment_append(A, &aseg, 1))
-		err(1, NULL);
 
 	/* Scan through alignments extending them forwards. */
 	for (j = 0; j < alignment_getsize(A); j++) {
@@ -382,6 +368,18 @@ searchagain:
 		asegp2->opos += (asegp->npos + asegp->alen) - asegp2->npos;
 		asegp2->npos = asegp->npos + asegp->alen;
 	}
+
+	/*
+	 * Push a final segment onto our alignment array to ensure we get any
+	 * trailing copied bytes.  We don't need a trailing seek, so set opos
+	 * equal to where the old file pointer will be already.
+	 */
+	asegp = alignment_get(A, alignment_getsize(A) - 1);
+	aseg.alen = 0;
+	aseg.npos = newsize;
+	aseg.opos = asegp->opos + asegp->alen;
+	if (alignment_append(A, &aseg, 1))
+		err(1, NULL);
 
 	/* Create the patch file */
 	if ((pf = fopen(argv[3], "wb")) == NULL)
