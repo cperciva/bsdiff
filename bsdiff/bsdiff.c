@@ -195,8 +195,8 @@ main(int argc, char *argv[])
 	size_t scan, pos, len;
 	size_t lastscan, lastpos, lastoffset;
 	size_t oldscore, scsc;
-	size_t s, Sf, lenf, Sb, lenb;
-	size_t overlap, Ss, lens;
+	size_t alenmax, nposmin;
+	size_t s;
 	size_t i, j;
 	size_t dblen, eblen;
 	uint8_t *db = NULL, *eb = NULL;
@@ -308,75 +308,79 @@ searchagain:
 	if (alignment_append(A, &aseg, 1))
 		err(1, NULL);
 
-	/* Scan through the alignments, extending them into gaps. */
+	/* Scan through alignments extending them forwards. */
+	for (j = 0; j < alignment_getsize(A); j++) {
+		asegp = alignment_get(A, j);
+
+		/* What's the furthest we could go? */
+		if (j + 1 < alignment_getsize(A))
+			alenmax = alignment_get(A, j + 1)->npos - asegp->npos;
+		else
+			alenmax = newsize - asegp->npos;
+		if (asegp->opos + alenmax > oldsize)
+			alenmax = oldsize - asegp->opos;
+
+		/* Extend as long as we match at least 50%. */
+		s = 0;
+		for (i = asegp->alen; i < alenmax; ) {
+			if (old[asegp->opos + i] == new[asegp->npos + i])
+				s++;
+			i++;
+			if (s * 2 > i - asegp->alen) {
+				s = 0;
+				asegp->alen = i;
+			}
+		}
+	}
+
+	/* Extend alignments backwards, resolving any resulting overlaps. */
 	for (j = 0; j + 1 < alignment_getsize(A); j++) {
 		asegp = alignment_get(A, j);
 		asegp2 = alignment_get(A, j + 1);
 
-		lastscan = asegp->npos;
-		lastpos = asegp->opos;
-		lenf = asegp->alen;
-		scan = asegp2->npos;
-		pos = asegp2->opos;
+		/* How far back can we go? */
+		if (j > 0)
+			nposmin = asegp->npos;
+		else
+			nposmin = 0;
+		if (nposmin + asegp2->opos < asegp2->npos)
+			nposmin = asegp2->npos - asegp2->opos;
 
-		/* Extend asegp forwards as long as it matches 50%. */
+		/* Extend as long as we match at least 50%. */
 		s = 0;
-		Sf = 0;
-		for (i = lenf; (lastscan + i < scan) &&
-		    (lastpos + i < oldsize); ) {
-			if (old[lastpos + i] == new[lastscan + i])
+		for (i = asegp2->npos; i > nposmin; ) {
+			if (old[asegp2->opos - asegp2->npos + i - 1] ==
+			    new[i - 1])
 				s++;
-			i++;
-			if (s * 2 + lenf > Sf * 2 + i) {
-				Sf = s;
-				lenf = i;
+			i--;
+			if (s * 2 + i > asegp2->npos) {
+				asegp2->alen += asegp2->npos - i;
+				asegp2->opos -= asegp2->npos - i;
+				asegp2->npos = i;
+				s = 0;
 			}
 		}
 
-		/* Extend asegp2 backwards as long as it matches 50%. */
-		lenb = 0;
-		if (scan < newsize) {
-			s = 0;
-			Sb = 0;
-			for (i = 1; (scan >= lastscan + i) &&
-			    (pos >= i); i++) {
-				if (old[pos - i] == new[scan - i])
-					s++;
-				if (s * 2 + lenb > Sb * 2 + i) {
-					Sb = s;
-					lenb = i;
-				}
+		/* If the extended alignments don't overlap, move on. */
+		if (asegp->npos + asegp->alen <= asegp2->npos)
+			continue;
+
+		/* Find the optimal position to split. */
+		s = 0;
+		for (i = asegp->npos + asegp->alen; i > asegp2->npos; ) {
+			if (old[i - 1 + (asegp->opos - asegp->npos)] != new[i - 1])
+				s++;
+			if (old[i - 1 + (asegp2->opos - asegp2->npos)] == new[i - 1])
+				s++;
+			i--;
+			if (i + s >= asegp->npos + asegp->alen) {
+				asegp->alen = i - asegp->npos;
+				s = 0;
 			}
 		}
-
-		/* If the extended alignments overlap, find the best split. */
-		if (lastscan + lenf > scan - lenb) {
-			overlap = (lastscan + lenf) - (scan - lenb);
-			s = 0;
-			Ss = 0;
-			lens = 0;
-			for (i = 0; i < overlap; i++) {
-				if (new[lastscan + lenf - overlap + i] ==
-				    old[lastpos + lenf - overlap + i])
-					s++;
-				if (new[scan - lenb + i] ==
-				    old[pos - lenb + i])
-					s--;
-				if ((ssize_t)s > (ssize_t)Ss) {
-					Ss = s;
-					lens = i + 1;
-				}
-			}
-
-			lenf += lens - overlap;
-			lenb -= lens;
-		}
-
-		/* Adjust the regions. */
-		asegp->alen = lenf;
-		asegp2->alen += lenb;
-		asegp2->npos -= lenb;
-		asegp2->opos -= lenb;
+		asegp2->alen -= (asegp->npos + asegp->alen) - asegp2->npos;
+		asegp2->opos += (asegp->npos + asegp->alen) - asegp2->npos;
+		asegp2->npos = asegp->npos + asegp->alen;
 	}
 
 	/* Create the patch file */
