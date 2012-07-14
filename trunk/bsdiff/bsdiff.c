@@ -197,7 +197,7 @@ main(int argc, char *argv[])
 	size_t oldscore, scsc;
 	size_t alenmax, nposmin;
 	size_t s;
-	size_t i, j;
+	size_t i, j, k;
 	size_t dblen, eblen;
 	uint8_t *db = NULL, *eb = NULL;
 	uint8_t buf[24];
@@ -294,6 +294,52 @@ main(int argc, char *argv[])
 		}
 	}
 
+	/*
+	 * Delete alignments which aren't much better than their successors.
+	 * The selection of segments above (using oldscore) ensures that each
+	 * segment matches at least 8 bytes which don't match at the previous
+	 * offset; now we turn around and apply that requirement in the
+	 * opposite direction.
+	 */
+	for (k = j = 0; j + 1< alignment_getsize(A); j++) {
+		asegp = alignment_get(A, k);
+		asegp2 = alignment_get(A, j + 1);
+
+		/* Always keep the first alignment; it's an anchor. */
+		if (k == 0) {
+			asegp = alignment_get(A, ++k);
+			memcpy(asegp, asegp2, sizeof(*asegp));
+			continue;
+		}
+
+		/* If the new alignment doesn't fit, keep the old one. */
+		if (asegp->npos + asegp2->opos < asegp2->npos) {
+			asegp = alignment_get(A, ++k);
+			memcpy(asegp, asegp2, sizeof(*asegp));
+			continue;
+		}
+
+		/* Count matches within segment k using j's alignment. */
+		lastoffset = asegp2->opos - asegp2->npos;
+		for (s = i = 0; i < asegp->alen; i++) {
+			if (old[asegp->npos + i + lastoffset] ==
+			    new[asegp->npos + i])
+				s++;
+		}
+
+		/* If more than 8 mismatches, keep this alignment segment. */
+		if (s + 8 < asegp->alen) {
+			asegp = alignment_get(A, ++k);
+			memcpy(asegp, asegp2, sizeof(*asegp));
+			continue;
+		}
+
+		/* Replace this segment with an extension of the next one. */
+		asegp->alen = asegp2->npos + asegp2->alen - asegp->npos;
+		asegp->opos = asegp->npos + asegp2->opos - asegp2->npos;
+	}
+	alignment_shrink(A, j - k);
+
 	/* Scan through alignments extending them forwards. */
 	for (j = 0; j < alignment_getsize(A); j++) {
 		asegp = alignment_get(A, j);
@@ -368,6 +414,20 @@ main(int argc, char *argv[])
 		asegp2->opos += (asegp->npos + asegp->alen) - asegp2->npos;
 		asegp2->npos = asegp->npos + asegp->alen;
 	}
+
+	/* Delete any alignment segments which are now empty. */
+	for (k = j = 1; j + 1< alignment_getsize(A); j++) {
+		asegp = alignment_get(A, k);
+		asegp2 = alignment_get(A, j + 1);
+
+		/* Keep if non-empty. */
+		if (asegp->alen)
+			k++;
+
+		/* Copy next segment into place. */
+		memcpy(alignment_get(A, k), asegp2, sizeof(*asegp));
+	}
+	alignment_shrink(A, j - k);
 
 	/*
 	 * Push a final segment onto our alignment array to ensure we get any
