@@ -301,6 +301,7 @@ main(int argc, char *argv[])
 	 * offset; now we turn around and apply that requirement in the
 	 * opposite direction.
 	 */
+#if 0
 	for (k = j = 0; j + 1< alignment_getsize(A); j++) {
 		asegp = alignment_get(A, k);
 		asegp2 = alignment_get(A, j + 1);
@@ -339,6 +340,7 @@ main(int argc, char *argv[])
 		asegp->opos = asegp->npos + asegp2->opos - asegp2->npos;
 	}
 	alignment_shrink(A, j - k);
+#endif
 
 	/* Scan through alignments extending them forwards. */
 	for (j = 0; j < alignment_getsize(A); j++) {
