@@ -1,5 +1,5 @@
 /*-
- * Copyright 2003-2005 Colin Percival
+ * Copyright 2003-2005, 2012 Colin Percival
  * All rights reserved
  *
  * Redistribution and use in source and binary forms, with or without
