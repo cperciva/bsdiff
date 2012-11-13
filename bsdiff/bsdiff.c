@@ -32,7 +32,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "elasticarray.h"
+#include "alignment.h"
 #include "mapfile.h"
 #include "qsufsort.h"
 
@@ -41,14 +41,6 @@
 #endif
 
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
-
-/* Alignment segment. */
-struct alignseg {
-	uint64_t npos;
-	uint64_t opos;
-	uint64_t alen;
-};
-ELASTICARRAY_DECL(ALIGNMENT, alignment, struct alignseg);
 
 static size_t
 matchlen(uint8_t *old, size_t oldsize, uint8_t *new, size_t newsize)
