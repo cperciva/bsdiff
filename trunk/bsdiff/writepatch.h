@@ -1,5 +1,5 @@
 /*-
- * Copyright 2003-2005, 2012 Colin Percival
+ * Copyright 2012 Colin Percival
  * All rights reserved
  *
  * Redistribution and use in source and binary forms, with or without
@@ -24,46 +24,15 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <err.h>
-#include <stdint.h>
+#ifndef _WRITEPATCH_H_
+#define _WRITEPATCH_H_
 
-#include "align.h"
-#include "alignment.h"
-#include "mapfile.h"
-#include "writepatch.h"
+/**
+ * writepatch(name, A, new, newsize, old):
+ * Write a patch with the specified name based on the alignment A of the new
+ * data new[0 .. newsize - 1] with the old data old[].
+ */
+void writepatch(const char *, ALIGNMENT, const uint8_t *, size_t,
+    const uint8_t *);
 
-int
-main(int argc, char *argv[])
-{
-	int oldfd, newfd;
-	uint8_t *old, *new;
-	size_t oldsize, newsize;
-	ALIGNMENT A;
-
-	if (argc != 4)
-		errx(1, "usage: %s oldfile newfile patchfile\n", argv[0]);
-
-	/* Map the old file into memory. */
-	if ((old = mapfile(argv[1], &oldfd, &oldsize)) == NULL)
-		err(1, "Cannot map file: %s", argv[1]);
-
-	/* Map the new file into memory. */
-	if ((new = mapfile(argv[2], &newfd, &newsize)) == NULL)
-		err(1, "Cannot map file: %s", argv[2]);
-
-	/* Compute an alignment of the two files. */
-	if ((A = align(new, newsize, old, oldsize)) == NULL)
-		err(1, "Error aligning files");
-
-	/* Create the patch file. */
-	writepatch(argv[3], A, new, newsize, old);
-
-	/* Free the alignment we constructed. */
-	alignment_free(A);
-
-	/* Release memory mappings. */
-	unmapfile(new, newfd, newsize);
-	unmapfile(old, oldfd, oldsize);
-
-	return 0;
-}
+#endif /* !_WRITEPATCH_H_ */
