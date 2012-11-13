@@ -117,7 +117,7 @@ split(size_t *I, size_t *V, size_t start, size_t len, size_t h)
  * Return the suffix sort of the array ${buf}.
  */
 size_t *
-qsufsort(uint8_t *buf, size_t buflen)
+qsufsort(const uint8_t *buf, size_t buflen)
 {
 	size_t *I, *V;
 	size_t buckets[256];
