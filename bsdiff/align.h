@@ -33,6 +33,6 @@
  * align(new, newsize, old, oldsize):
  * Align new[0 .. newsize - 1] against old[0 .. oldsize - 1].
  */
-ALIGNMENT align(uint8_t *, size_t, uint8_t *, size_t);
+ALIGNMENT align(const uint8_t *, size_t, const uint8_t *, size_t);
 
 #endif /* !_ALIGN_H_ */

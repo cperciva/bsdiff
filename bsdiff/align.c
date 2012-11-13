@@ -37,7 +37,8 @@
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 
 static size_t
-matchlen(uint8_t *old, size_t oldsize, uint8_t *new, size_t newsize)
+matchlen(const uint8_t *old, size_t oldsize,
+    const uint8_t *new, size_t newsize)
 {
 	size_t i;
 
@@ -49,8 +50,8 @@ matchlen(uint8_t *old, size_t oldsize, uint8_t *new, size_t newsize)
 }
 
 static size_t
-search(size_t *I, uint8_t *old, size_t oldsize, uint8_t *new, size_t newsize,
-    size_t st, size_t en, size_t *pos)
+search(size_t *I, const uint8_t *old, size_t oldsize, const uint8_t *new,
+    size_t newsize, size_t st, size_t en, size_t *pos)
 {
 	size_t x, y;
 
@@ -76,7 +77,7 @@ search(size_t *I, uint8_t *old, size_t oldsize, uint8_t *new, size_t newsize,
 }
 
 ALIGNMENT
-align(uint8_t * new, size_t newsize, uint8_t * old, size_t oldsize)
+align(const uint8_t * new, size_t newsize, const uint8_t * old, size_t oldsize)
 {
 	size_t *I;
 	ALIGNMENT A;
