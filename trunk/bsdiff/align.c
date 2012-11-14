@@ -304,18 +304,6 @@ align(const uint8_t * new, size_t newsize, const uint8_t * old, size_t oldsize)
 	}
 	alignment_shrink(A, j - k);
 
-	/*
-	 * Push a final segment onto our alignment array to ensure we get any
-	 * trailing copied bytes.  We don't need a trailing seek, so set opos
-	 * equal to where the old file pointer will be already.
-	 */
-	asegp = alignment_get(A, alignment_getsize(A) - 1);
-	aseg.alen = 0;
-	aseg.npos = newsize;
-	aseg.opos = asegp->opos + asegp->alen;
-	if (alignment_append(A, &aseg, 1))
-		err(1, NULL);
-
 	/* Free the suffix array. */
 	free(I);
 
