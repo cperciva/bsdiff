@@ -38,8 +38,9 @@
 
 #include "writepatch.h"
 
+/* Encode an int64_t as a sequence of 8 bytes. */
 static void
-offtout(int64_t x, uint8_t *buf)
+encval(int64_t x, uint8_t buf[8])
 {
 	uint64_t y;
 
@@ -62,7 +63,7 @@ writeval(BZFILE * fbz2, int64_t val)
 	int bz2err;
 
 	/* Expand the value into a buffer. */
-	offtout(val, buf);
+	encval(val, buf);
 
 	/* Write it out. */
 	BZ2_bzWrite(&bz2err, fbz2, buf, 8);
@@ -319,9 +320,9 @@ writepatch(const char * name, ALIGNMENT A, const uint8_t * new, size_t newsize,
 		??	??	Bzip2ed diff block
 		??	??	Bzip2ed extra block */
 	memcpy(header, "BSDIFF40", 8);
-	offtout(0, header + 8);
-	offtout(0, header + 16);
-	offtout(newsize, header + 24);
+	encval(0, header + 8);
+	encval(0, header + 16);
+	encval(newsize, header + 24);
 	if (fwrite(header, 32, 1, pf) != 1)
 		err(1, "fwrite(%s)", name);
 
@@ -332,7 +333,7 @@ writepatch(const char * name, ALIGNMENT A, const uint8_t * new, size_t newsize,
 	/* Compute size of compressed ctrl data */
 	if ((len = ftello(pf)) == (size_t)(-1))
 		err(1, "ftello");
-	offtout(len - 32, header + 8);
+	encval(len - 32, header + 8);
 
 	/* Write diff block. */
 	if (writediff(pf, A, new, old))
@@ -341,7 +342,7 @@ writepatch(const char * name, ALIGNMENT A, const uint8_t * new, size_t newsize,
 	/* Compute size of compressed diff data */
 	if ((flen = ftello(pf)) == (size_t)(-1))
 		err(1, "ftello");
-	offtout(flen - len, header + 16);
+	encval(flen - len, header + 16);
 
 	/* Write extra block. */
 	if (writeextra(pf, A, new, newsize))
