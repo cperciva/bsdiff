@@ -31,6 +31,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "sysendian.h"
 #include "warnp.h"
 
 #include "alignment.h"
@@ -42,22 +43,15 @@ offtout(int64_t x, uint8_t *buf)
 {
 	uint64_t y;
 
-	if (x < 0)
-		y = -x;
-	else
-		y = x;
+	/* Convert from 2's-complement to sign-magnitude. */
+	y = x;
+	if (y & ((uint64_t)(1) << 63)) {
+		y = (~y) + 1;
+		y |= ((uint64_t)(1) << 63);
+	}
 
-		buf[0]=y%256;y-=buf[0];
-	y=y/256;buf[1]=y%256;y-=buf[1];
-	y=y/256;buf[2]=y%256;y-=buf[2];
-	y=y/256;buf[3]=y%256;y-=buf[3];
-	y=y/256;buf[4]=y%256;y-=buf[4];
-	y=y/256;buf[5]=y%256;y-=buf[5];
-	y=y/256;buf[6]=y%256;y-=buf[6];
-	y=y/256;buf[7]=y%256;
-
-	if (x<0)
-		buf[7] |= 0x80;
+	/* Encode value. */
+	le64enc(buf, y);
 }
 
 /* Write an encoded int64_t to the bz2 stream. */
