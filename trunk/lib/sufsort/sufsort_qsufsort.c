@@ -28,7 +28,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#include "qsufsort.h"
+#include "sufsort_qsufsort.h"
 
 #define DONEMASK ((size_t)(1) << (sizeof(size_t) * 8 - 1))
 #define SWAP(x, y, tmp) do {	\
@@ -113,11 +113,11 @@ split(size_t *I, size_t *V, size_t start, size_t len, size_t h)
 }
 
 /*
- * qsufsort(buf, buflen):
+ * sufsort_qsufsort(buf, buflen):
  * Return the suffix sort of the array ${buf}.
  */
 size_t *
-qsufsort(const uint8_t *buf, size_t buflen)
+sufsort_qsufsort(const uint8_t *buf, size_t buflen)
 {
 	size_t *I, *V;
 	size_t buckets[256];

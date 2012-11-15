@@ -29,10 +29,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "alignment.h"
-#include "qsufsort.h"
+#include "bsdiff_alignment.h"
+#include "sufsort_qsufsort.h"
 
-#include "align.h"
+#include "bsdiff_align.h"
 
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 
@@ -76,13 +76,14 @@ search(size_t *I, const uint8_t *old, size_t oldsize, const uint8_t *new,
 	}
 }
 
-ALIGNMENT
-align(const uint8_t * new, size_t newsize, const uint8_t * old, size_t oldsize)
+BSDIFF_ALIGNMENT
+bsdiff_align(const uint8_t * new, size_t newsize,
+    const uint8_t * old, size_t oldsize)
 {
 	size_t *I;
-	ALIGNMENT A;
-	struct alignseg aseg;
-	struct alignseg * asegp, * asegp2;
+	BSDIFF_ALIGNMENT A;
+	struct bsdiff_alignseg aseg;
+	struct bsdiff_alignseg * asegp, * asegp2;
 	size_t scan, pos, len;
 	size_t lastoffset;
 	size_t oldscore, scsc;
@@ -91,11 +92,11 @@ align(const uint8_t * new, size_t newsize, const uint8_t * old, size_t oldsize)
 	size_t i, j, k;
 
 	/* Suffix sort the old file. */
-	if ((I = qsufsort(old, oldsize)) == NULL)
+	if ((I = sufsort_qsufsort(old, oldsize)) == NULL)
 		err(1, NULL);
 
 	/* Initialize empty alignment array. */
-	if ((A = alignment_init(0)) == NULL)
+	if ((A = bsdiff_alignment_init(0)) == NULL)
 		err(1, NULL);
 
 	/*
@@ -149,7 +150,7 @@ align(const uint8_t * new, size_t newsize, const uint8_t * old, size_t oldsize)
 				aseg.alen = len;
 				aseg.npos = scan;
 				aseg.opos = pos;
-				if (alignment_append(A, &aseg, 1))
+				if (bsdiff_alignment_append(A, &aseg, 1))
 					err(1, NULL);
 				lastoffset = pos - scan;
 				break;
@@ -176,20 +177,20 @@ align(const uint8_t * new, size_t newsize, const uint8_t * old, size_t oldsize)
 	 * opposite direction.
 	 */
 #if 0
-	for (k = j = 0; j + 1< alignment_getsize(A); j++) {
-		asegp = alignment_get(A, k);
-		asegp2 = alignment_get(A, j + 1);
+	for (k = j = 0; j + 1< bsdiff_alignment_getsize(A); j++) {
+		asegp = bsdiff_alignment_get(A, k);
+		asegp2 = bsdiff_alignment_get(A, j + 1);
 
 		/* Always keep the first alignment; it's an anchor. */
 		if (k == 0) {
-			asegp = alignment_get(A, ++k);
+			asegp = bsdiff_alignment_get(A, ++k);
 			memcpy(asegp, asegp2, sizeof(*asegp));
 			continue;
 		}
 
 		/* If the new alignment doesn't fit, keep the old one. */
 		if (asegp->npos + asegp2->opos < asegp2->npos) {
-			asegp = alignment_get(A, ++k);
+			asegp = bsdiff_alignment_get(A, ++k);
 			memcpy(asegp, asegp2, sizeof(*asegp));
 			continue;
 		}
@@ -204,7 +205,7 @@ align(const uint8_t * new, size_t newsize, const uint8_t * old, size_t oldsize)
 
 		/* If more than 8 mismatches, keep this alignment segment. */
 		if (s + 8 < asegp->alen) {
-			asegp = alignment_get(A, ++k);
+			asegp = bsdiff_alignment_get(A, ++k);
 			memcpy(asegp, asegp2, sizeof(*asegp));
 			continue;
 		}
@@ -213,16 +214,17 @@ align(const uint8_t * new, size_t newsize, const uint8_t * old, size_t oldsize)
 		asegp->alen = asegp2->npos + asegp2->alen - asegp->npos;
 		asegp->opos = asegp->npos + asegp2->opos - asegp2->npos;
 	}
-	alignment_shrink(A, j - k);
+	bsdiff_alignment_shrink(A, j - k);
 #endif
 
 	/* Scan through alignments extending them forwards. */
-	for (j = 0; j < alignment_getsize(A); j++) {
-		asegp = alignment_get(A, j);
+	for (j = 0; j < bsdiff_alignment_getsize(A); j++) {
+		asegp = bsdiff_alignment_get(A, j);
 
 		/* What's the furthest we could go? */
-		if (j + 1 < alignment_getsize(A))
-			alenmax = alignment_get(A, j + 1)->npos - asegp->npos;
+		if (j + 1 < bsdiff_alignment_getsize(A))
+			alenmax = bsdiff_alignment_get(A, j + 1)->npos -
+			    asegp->npos;
 		else
 			alenmax = newsize - asegp->npos;
 		if (asegp->opos + alenmax > oldsize)
@@ -242,9 +244,9 @@ align(const uint8_t * new, size_t newsize, const uint8_t * old, size_t oldsize)
 	}
 
 	/* Extend alignments backwards, resolving any resulting overlaps. */
-	for (j = 0; j + 1 < alignment_getsize(A); j++) {
-		asegp = alignment_get(A, j);
-		asegp2 = alignment_get(A, j + 1);
+	for (j = 0; j + 1 < bsdiff_alignment_getsize(A); j++) {
+		asegp = bsdiff_alignment_get(A, j);
+		asegp2 = bsdiff_alignment_get(A, j + 1);
 
 		/* How far back can we go? */
 		if (j > 0)
@@ -292,18 +294,18 @@ align(const uint8_t * new, size_t newsize, const uint8_t * old, size_t oldsize)
 	}
 
 	/* Delete any alignment segments which are now empty. */
-	for (k = j = 1; j + 1< alignment_getsize(A); j++) {
-		asegp = alignment_get(A, k);
-		asegp2 = alignment_get(A, j + 1);
+	for (k = j = 1; j + 1< bsdiff_alignment_getsize(A); j++) {
+		asegp = bsdiff_alignment_get(A, k);
+		asegp2 = bsdiff_alignment_get(A, j + 1);
 
 		/* Keep if non-empty. */
 		if (asegp->alen)
 			k++;
 
 		/* Copy next segment into place. */
-		memcpy(alignment_get(A, k), asegp2, sizeof(*asegp));
+		memcpy(bsdiff_alignment_get(A, k), asegp2, sizeof(*asegp));
 	}
-	alignment_shrink(A, j - k);
+	bsdiff_alignment_shrink(A, j - k);
 
 	/* Free the suffix array. */
 	free(I);

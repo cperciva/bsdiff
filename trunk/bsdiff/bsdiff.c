@@ -27,10 +27,11 @@
 #include <err.h>
 #include <stdint.h>
 
-#include "align.h"
-#include "alignment.h"
 #include "mapfile.h"
-#include "writepatch.h"
+
+#include "bsdiff_align.h"
+#include "bsdiff_alignment.h"
+#include "bsdiff_writepatch.h"
 
 int
 main(int argc, char *argv[])
@@ -38,7 +39,7 @@ main(int argc, char *argv[])
 	int oldfd, newfd;
 	uint8_t *old, *new;
 	size_t oldsize, newsize;
-	ALIGNMENT A;
+	BSDIFF_ALIGNMENT A;
 
 	if (argc != 4)
 		errx(1, "usage: %s oldfile newfile patchfile\n", argv[0]);
@@ -52,14 +53,14 @@ main(int argc, char *argv[])
 		err(1, "Cannot map file: %s", argv[2]);
 
 	/* Compute an alignment of the two files. */
-	if ((A = align(new, newsize, old, oldsize)) == NULL)
+	if ((A = bsdiff_align(new, newsize, old, oldsize)) == NULL)
 		err(1, "Error aligning files");
 
 	/* Create the patch file. */
-	writepatch(argv[3], A, new, newsize, old);
+	bsdiff_writepatch(argv[3], A, new, newsize, old);
 
 	/* Free the alignment we constructed. */
-	alignment_free(A);
+	bsdiff_alignment_free(A);
 
 	/* Release memory mappings. */
 	unmapfile(new, newfd, newsize);

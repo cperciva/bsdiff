@@ -34,9 +34,9 @@
 #include "sysendian.h"
 #include "warnp.h"
 
-#include "alignment.h"
+#include "bsdiff_alignment.h"
 
-#include "writepatch.h"
+#include "bsdiff_writepatch.h"
 
 /* Write to a BZ2-encoded stream. */
 static int
@@ -95,9 +95,9 @@ writeval(BZFILE * fbz2, int64_t val)
 
 /* Append the (compressed) control block to the the file. */
 static int
-writectrl(FILE * f, ALIGNMENT A, size_t newsize)
+writectrl(FILE * f, BSDIFF_ALIGNMENT A, size_t newsize)
 {
-	struct alignseg * asegp;
+	struct bsdiff_alignseg * asegp;
 	BZFILE * fbz2;
 	size_t opos, npos;
 	size_t i;
@@ -117,10 +117,10 @@ writectrl(FILE * f, ALIGNMENT A, size_t newsize)
 	 * next alignment segment.  Otherwise, we need to say "copy zero bytes"
 	 * and start processing at the start of the alignment list.
 	 */
-	if ((alignment_getsize(A) > 0) &&
-	    (alignment_get(A, 0)->npos == 0) &&
-	    (alignment_get(A, 0)->opos == 0)) {
-		asegp = alignment_get(A, 0);
+	if ((bsdiff_alignment_getsize(A) > 0) &&
+	    (bsdiff_alignment_get(A, 0)->npos == 0) &&
+	    (bsdiff_alignment_get(A, 0)->opos == 0)) {
+		asegp = bsdiff_alignment_get(A, 0);
 		if (writeval(fbz2, asegp->alen))
 			goto err1;
 		npos = opos = asegp->alen;
@@ -133,8 +133,8 @@ writectrl(FILE * f, ALIGNMENT A, size_t newsize)
 	}
 
 	/* Read through the alignment array, processing segments. */
-	for ( ; i < alignment_getsize(A); i++) {
-		asegp = alignment_get(A, i);
+	for ( ; i < bsdiff_alignment_getsize(A); i++) {
+		asegp = bsdiff_alignment_get(A, i);
 
 		/* Extra length is the gap before this segment starts. */
 		if (writeval(fbz2, asegp->npos - npos))
@@ -207,9 +207,10 @@ err0:
 
 /* Append the (compressed) diff block to the the file. */
 static int
-writediff(FILE * f, ALIGNMENT A, const uint8_t * new, const uint8_t * old)
+writediff(FILE * f, BSDIFF_ALIGNMENT A, const uint8_t * new,
+    const uint8_t * old)
 {
-	struct alignseg * asegp;
+	struct bsdiff_alignseg * asegp;
 	BZFILE * fbz2;
 	size_t i;
 	int bz2err;
@@ -221,8 +222,8 @@ writediff(FILE * f, ALIGNMENT A, const uint8_t * new, const uint8_t * old)
 	}
 
 	/* Write segments one by one. */
-	for (i = 0; i < alignment_getsize(A); i++) {
-		asegp = alignment_get(A, i);
+	for (i = 0; i < bsdiff_alignment_getsize(A); i++) {
+		asegp = bsdiff_alignment_get(A, i);
 
 		if (writediffseg(fbz2, &new[asegp->npos], &old[asegp->opos],
 		    asegp->alen))
@@ -248,9 +249,9 @@ err0:
 
 /* Append the (compressed) extra block to the file. */
 static int
-writeextra(FILE * f, ALIGNMENT A, const uint8_t * new, size_t newsize)
+writeextra(FILE * f, BSDIFF_ALIGNMENT A, const uint8_t * new, size_t newsize)
 {
-	struct alignseg * asegp;
+	struct bsdiff_alignseg * asegp;
 	BZFILE * fbz2;
 	size_t npos;
 	size_t i;
@@ -264,8 +265,8 @@ writeextra(FILE * f, ALIGNMENT A, const uint8_t * new, size_t newsize)
 
 	/* Write segments one by one. */
 	npos = 0;
-	for (i = 0; i < alignment_getsize(A); i++) {
-		asegp = alignment_get(A, i);
+	for (i = 0; i < bsdiff_alignment_getsize(A); i++) {
+		asegp = bsdiff_alignment_get(A, i);
 
 		/* Write data up to the start of the next aligned section. */
 		if (bzwrite(fbz2, &new[npos], asegp->npos - npos))
@@ -301,13 +302,13 @@ err0:
 }
 
 /**
- * writepatch(name, A, new, newsize, old):
+ * bsdiff_writepatch(name, A, new, newsize, old):
  * Write a patch with the specified name based on the alignment A of the new
  * data new[0 .. newsize - 1] with the old data old[].
  */
 void
-writepatch(const char * name, ALIGNMENT A, const uint8_t * new, size_t newsize,
-    const uint8_t * old)
+bsdiff_writepatch(const char * name, BSDIFF_ALIGNMENT A, const uint8_t * new,
+    size_t newsize, const uint8_t * old)
 {
 	size_t len;
 	size_t flen;
