@@ -98,11 +98,12 @@ align(const uint8_t * new, size_t newsize, const uint8_t * old, size_t oldsize)
 	if ((A = alignment_init(0)) == NULL)
 		err(1, NULL);
 
-	/* Anchor the alignment at the start of the file. */
-	aseg.alen = aseg.npos = aseg.opos = 0;
-	if (alignment_append(A, &aseg, 1))
-		err(1, NULL);
-	lastoffset = 0;
+	/*
+	 * We have no "last offset", so set a value of lastoffset such that
+	 * in the loop below we'll never think that the last offset matches at
+	 * the byte being considered.
+	 */
+	lastoffset = oldsize;
 
 	/* Scan through new, constructing an alignment against old. */
 	for (scan = 0; scan < newsize; scan += len) {
