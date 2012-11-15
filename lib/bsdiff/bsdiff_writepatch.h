@@ -24,19 +24,15 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _ALIGNMENT_H_
-#define _ALIGNMENT_H_
+#ifndef _BSDIFF_WRITEPATCH_H_
+#define _BSDIFF_WRITEPATCH_H_
 
-#include "elasticarray.h"
+/**
+ * bsdiff_writepatch(name, A, new, newsize, old):
+ * Write a patch with the specified name based on the alignment A of the new
+ * data new[0 .. newsize - 1] with the old data old[].
+ */
+void bsdiff_writepatch(const char *, BSDIFF_ALIGNMENT, const uint8_t *,
+    size_t, const uint8_t *);
 
-/* Alignment segment. */
-struct alignseg {
-	uint64_t npos;
-	uint64_t opos;
-	uint64_t alen;
-};
-
-/* Elastic array of segments. */
-ELASTICARRAY_DECL(ALIGNMENT, alignment, struct alignseg);
-
-#endif /* !_ALIGNMENT_H_ */
+#endif /* !_BSDIFF_WRITEPATCH_H_ */

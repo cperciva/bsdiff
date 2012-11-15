@@ -24,15 +24,16 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _ALIGN_H_
-#define _ALIGN_H_
+#ifndef _BSDIFF_ALIGN_H_
+#define _BSDIFF_ALIGN_H_
 
-#include "alignment.h"
+#include "bsdiff_alignment.h"
 
 /**
- * align(new, newsize, old, oldsize):
+ * bsdiff_align(new, newsize, old, oldsize):
  * Align new[0 .. newsize - 1] against old[0 .. oldsize - 1].
  */
-ALIGNMENT align(const uint8_t *, size_t, const uint8_t *, size_t);
+BSDIFF_ALIGNMENT bsdiff_align(const uint8_t *, size_t,
+    const uint8_t *, size_t);
 
 #endif /* !_ALIGN_H_ */
