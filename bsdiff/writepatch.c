@@ -38,6 +38,31 @@
 
 #include "writepatch.h"
 
+/* Write to a BZ2-encoded stream. */
+static int
+bzwrite(BZFILE * fbz2, const uint8_t * buf, size_t len)
+{
+	void * _buf;
+	int bz2err;
+
+	/*
+	 * The bz2 library API is broken, in that it takes a write buffer as a
+	 * "void *" instead of a "const void *".  Since we're writing const
+	 * buffers, we need to "de-const-ify" the pointer.
+	 */
+	_buf = (void *)(intptr_t)(buf);
+
+	/* Perform the write. */
+	BZ2_bzWrite(&bz2err, fbz2, _buf, len);
+
+	/* Check for error. */
+	if (bz2err != BZ_OK) {
+		warn0("BZ2_bzWrite failed: %d", bz2err);
+		return (-1);
+	} else
+		return (0);
+}
+
 /* Encode an int64_t as a sequence of 8 bytes. */
 static void
 encval(int64_t x, uint8_t buf[8])
@@ -60,20 +85,12 @@ static int
 writeval(BZFILE * fbz2, int64_t val)
 {
 	uint8_t buf[8];
-	int bz2err;
 
 	/* Expand the value into a buffer. */
 	encval(val, buf);
 
 	/* Write it out. */
-	BZ2_bzWrite(&bz2err, fbz2, buf, 8);
-
-	/* Check error status, warn, and return. */
-	if (bz2err != BZ_OK) {
-		warn0("BZ2_bzWrite failed: %d", bz2err);
-		return (-1);
-	} else
-		return (0);
+	return (bzwrite(fbz2, buf, 8));
 }
 
 /* Append the (compressed) control block to the the file. */
@@ -81,13 +98,13 @@ static int
 writectrl(FILE * f, ALIGNMENT A, size_t newsize)
 {
 	struct alignseg * asegp;
-	BZFILE * pfbz2;
+	BZFILE * fbz2;
 	size_t opos, npos;
 	size_t i;
 	int bz2err;
 
 	/* Start writing control tuples. */
-	if ((pfbz2 = BZ2_bzWriteOpen(&bz2err, f, 9, 0, 0)) == NULL) {
+	if ((fbz2 = BZ2_bzWriteOpen(&bz2err, f, 9, 0, 0)) == NULL) {
 		warn0("BZ2_bzWriteOpen failed: %d", bz2err);
 		goto err0;
 	}
@@ -104,12 +121,12 @@ writectrl(FILE * f, ALIGNMENT A, size_t newsize)
 	    (alignment_get(A, 0)->npos == 0) &&
 	    (alignment_get(A, 0)->opos == 0)) {
 		asegp = alignment_get(A, 0);
-		if (writeval(pfbz2, asegp->alen))
+		if (writeval(fbz2, asegp->alen))
 			goto err1;
 		npos = opos = asegp->alen;
 		i = 1;
 	} else {
-		if (writeval(pfbz2, 0))
+		if (writeval(fbz2, 0))
 			goto err1;
 		npos = opos = 0;
 		i = 0;
@@ -120,15 +137,15 @@ writectrl(FILE * f, ALIGNMENT A, size_t newsize)
 		asegp = alignment_get(A, i);
 
 		/* Extra length is the gap before this segment starts. */
-		if (writeval(pfbz2, asegp->npos - npos))
+		if (writeval(fbz2, asegp->npos - npos))
 			goto err1;
 
 		/* Seek length is the difference between positions in old. */
-		if (writeval(pfbz2, asegp->opos - opos))
+		if (writeval(fbz2, asegp->opos - opos))
 			goto err1;
 
 		/* Diff length is the length of the aligned region. */
-		if (writeval(pfbz2, asegp->alen))
+		if (writeval(fbz2, asegp->alen))
 			goto err1;
 
 		/* Update our pointers within the two files. */
@@ -137,15 +154,15 @@ writectrl(FILE * f, ALIGNMENT A, size_t newsize)
 	}
 
 	/* Extra length is the rest up to the end of the file. */
-	if (writeval(pfbz2, newsize - npos))
+	if (writeval(fbz2, newsize - npos))
 		goto err1;
 
 	/* Seek length is zero; no point seeking after we're finished. */
-	if (writeval(pfbz2, 0))
+	if (writeval(fbz2, 0))
 		goto err1;
 
 	/* We've finished writing control tuples. */
-	BZ2_bzWriteClose(&bz2err, pfbz2, 0, NULL, NULL);
+	BZ2_bzWriteClose(&bz2err, fbz2, 0, NULL, NULL);
 	if (bz2err != BZ_OK) {
 		warn0("BZ2_bzWriteClose failed: %d", bz2err);
 		goto err0;
@@ -155,7 +172,7 @@ writectrl(FILE * f, ALIGNMENT A, size_t newsize)
 	return (0);
 
 err1:
-	BZ2_bzWriteClose(&bz2err, pfbz2, 0, NULL, NULL);
+	BZ2_bzWriteClose(&bz2err, fbz2, 0, NULL, NULL);
 err0:
 	/* Failure! */
 	return (-1);
@@ -168,7 +185,6 @@ writediffseg(BZFILE * fbz2, const uint8_t * new, const uint8_t * old,
 {
 	uint8_t buf[4096];
 	size_t i;
-	int bz2err;
 
 	/* Loop until we've written everything. */
 	while (len > 0) {
@@ -177,11 +193,8 @@ writediffseg(BZFILE * fbz2, const uint8_t * new, const uint8_t * old,
 			buf[i] = *new++ - *old++;
 
 		/* Write out the diffed data. */
-		BZ2_bzWrite(&bz2err, fbz2, buf, i);
-		if (bz2err != BZ_OK) {
-			warn0("BZ2_bzWrite failed: %d", bz2err);
+		if (bzwrite(fbz2, buf, i))
 			goto err0;
-		}
 	}
 
 	/* Success! */
@@ -197,12 +210,12 @@ static int
 writediff(FILE * f, ALIGNMENT A, const uint8_t * new, const uint8_t * old)
 {
 	struct alignseg * asegp;
-	BZFILE * pfbz2;
+	BZFILE * fbz2;
 	size_t i;
 	int bz2err;
 
 	/* Start writing diff segments. */
-	if ((pfbz2 = BZ2_bzWriteOpen(&bz2err, f, 9, 0, 0)) == NULL) {
+	if ((fbz2 = BZ2_bzWriteOpen(&bz2err, f, 9, 0, 0)) == NULL) {
 		warn0("BZ2_bzWriteOpen failed: %d", bz2err);
 		goto err0;
 	}
@@ -211,13 +224,13 @@ writediff(FILE * f, ALIGNMENT A, const uint8_t * new, const uint8_t * old)
 	for (i = 0; i < alignment_getsize(A); i++) {
 		asegp = alignment_get(A, i);
 
-		if (writediffseg(pfbz2, &new[asegp->npos], &old[asegp->opos],
+		if (writediffseg(fbz2, &new[asegp->npos], &old[asegp->opos],
 		    asegp->alen))
 			goto err1;
 	}
 
 	/* We've finished writing the diff block. */
-	BZ2_bzWriteClose(&bz2err, pfbz2, 0, NULL, NULL);
+	BZ2_bzWriteClose(&bz2err, fbz2, 0, NULL, NULL);
 	if (bz2err != BZ_OK) {
 		warn0("BZ2_bzWriteClose failed: %d", bz2err);
 		goto err0;
@@ -227,7 +240,7 @@ writediff(FILE * f, ALIGNMENT A, const uint8_t * new, const uint8_t * old)
 	return (0);
 
 err1:
-	BZ2_bzWriteClose(&bz2err, pfbz2, 0, NULL, NULL);
+	BZ2_bzWriteClose(&bz2err, fbz2, 0, NULL, NULL);
 err0:
 	/* Failure! */
 	return (-1);
@@ -255,12 +268,8 @@ writeextra(FILE * f, ALIGNMENT A, const uint8_t * new, size_t newsize)
 		asegp = alignment_get(A, i);
 
 		/* Write data up to the start of the next aligned section. */
-		BZ2_bzWrite(&bz2err, fbz2, (void *)(uintptr_t)&new[npos],
-		    asegp->npos - npos);
-		if (bz2err != BZ_OK) {
-			warn0("BZ2_bzWrite failed: %d", bz2err);
+		if (bzwrite(fbz2, &new[npos], asegp->npos - npos))
 			goto err1;
-		}
 
 		/* The next unaligned section starts here. */
 		npos = asegp->npos + asegp->alen;
@@ -303,10 +312,10 @@ writepatch(const char * name, ALIGNMENT A, const uint8_t * new, size_t newsize,
 	size_t len;
 	size_t flen;
 	uint8_t header[32];
-	FILE * pf;
+	FILE * f;
 
 	/* Open the patch file for writing. */
-	if ((pf = fopen(name, "wb")) == NULL)
+	if ((f = fopen(name, "wb")) == NULL)
 		err(1, "%s", name);
 
 	/* Header is
@@ -323,36 +332,36 @@ writepatch(const char * name, ALIGNMENT A, const uint8_t * new, size_t newsize,
 	encval(0, header + 8);
 	encval(0, header + 16);
 	encval(newsize, header + 24);
-	if (fwrite(header, 32, 1, pf) != 1)
+	if (fwrite(header, 32, 1, f) != 1)
 		err(1, "fwrite(%s)", name);
 
 	/* Write control block. */
-	if (writectrl(pf, A, newsize))
+	if (writectrl(f, A, newsize))
 		exit(1);
 
 	/* Compute size of compressed ctrl data */
-	if ((len = ftello(pf)) == (size_t)(-1))
+	if ((len = ftello(f)) == (size_t)(-1))
 		err(1, "ftello");
 	encval(len - 32, header + 8);
 
 	/* Write diff block. */
-	if (writediff(pf, A, new, old))
+	if (writediff(f, A, new, old))
 		exit(1);
 
 	/* Compute size of compressed diff data */
-	if ((flen = ftello(pf)) == (size_t)(-1))
+	if ((flen = ftello(f)) == (size_t)(-1))
 		err(1, "ftello");
 	encval(flen - len, header + 16);
 
 	/* Write extra block. */
-	if (writeextra(pf, A, new, newsize))
+	if (writeextra(f, A, new, newsize))
 		exit(1);
 
 	/* Seek to the beginning, write the header, and close the file */
-	if (fseeko(pf, 0, SEEK_SET))
+	if (fseeko(f, 0, SEEK_SET))
 		err(1, "fseeko");
-	if (fwrite(header, 32, 1, pf) != 1)
+	if (fwrite(header, 32, 1, f) != 1)
 		err(1, "fwrite(%s)", name);
-	if (fclose(pf))
+	if (fclose(f))
 		err(1, "fclose");
 }
