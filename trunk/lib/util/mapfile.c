@@ -62,7 +62,13 @@ mapfile(const char * name, int * fd, size_t * len)
 	}
 
 	/* Map the file into memory. */
-	if ((ptr = mmap(NULL, sb.st_size, PROT_READ, 0, d, 0)) == MAP_FAILED)
+	if ((ptr = mmap(NULL, sb.st_size, PROT_READ,
+#ifdef MAP_NOCORE
+	    MAP_PRIVATE | MAP_NOCORE,
+#else
+	    MAP_PRIVATE,
+#endif
+	    d, 0)) == MAP_FAILED)
 		goto err1;
 
 	/* Return the descriptor, length, and pointer. */
