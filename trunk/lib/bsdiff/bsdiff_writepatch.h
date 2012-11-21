@@ -27,6 +27,10 @@
 #ifndef _BSDIFF_WRITEPATCH_H_
 #define _BSDIFF_WRITEPATCH_H_
 
+#include <stdint.h>
+
+#include "bsdiff_alignment.h"
+
 /**
  * bsdiff_writepatch(name, A, new, newsize, old):
  * Write a patch with the specified name based on the alignment A of the new
