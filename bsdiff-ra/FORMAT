@@ -1,0 +1,92 @@
+bsdiff-random-access patch format
+---------------------------------
+
+This is experimental and subject to change!  It will obtain a version number
+when it is fixed.
+
+The patch file is:
+offset	length	value
+------	------	-----
+0	32	patch header
+32	X	compressed header block
+32+X	Y	patch data block
+
+Potential future changes:
+ * Adding a cryptographic signature of the patch header.
+ * bzip2, in the various places it's used, may be replaced by a faster / more
+   compressive / less memory-intensive compression function.
+
+The patch header is:
+offset	length	value
+------	------	-----
+0	8	magic string "BSDIFFSX"
+		(stands for "bsdiff seekable"; X will become a version #)
+8	8	new file length
+16	4	new file segment length
+20	4	X = compressed header block length
+24	8	Y = patch data block length
+
+Potential future changes:
+ * Adding the size of the decompressed header block.
+   * Not necessary except as a sanity-check, since it's easily computed from
+     the new file length and the new file segment length.
+ * Adding the hash of the compressed header block.
+ * Removing the patch data block length, since it's just the size of the file
+   minus the patch header and compressed header block.
+
+The compressed header block is:
+  bzip2(header block)
+
+The header block is:
+offset	length	value
+------	------	-----
+0	16	Segment #0 header
+16	32	Segment #1 header
+	...
+16*N-16	16	Segment #(N-1) header
+where N = ceiling([new file length] / [new file segment length]).
+
+A segment header is:
+offset	length	value
+------	------	-----
+0	8	offset of old data segment start
+8	4	length of old data segment
+12	4	length of patch data segment
+
+Potential future changes:
+ * Adding the hash of the old data segment.
+ * Adding the hash of the patch data segment.
+ * Moving the old segment parameters into the patch segment.
+   * Having them here means more of the patch file is kept in RAM all the
+     time; but makes it possible to read the old data segment and the patch
+     segment simultaneously, potentially reducing read latency.
+
+The patch data block is:
+  [patch data segment #0] || ... || [patch data segment #(N-1)]
+
+A patch data segment is:
+offset	length	value
+------	------	-----
+0	4	X = compressed ctrl length
+4	4	uncompressed ctrl length
+8	4	Y = compressed diff length
+12	4	Z = compressed extra length
+16	X	bzip2(ctrl block)
+16+X	Y	bzip2(diff block)
+16+X+Y	Z	bzip2(extra block)
+
+Potential future changes:
+ * Adding the sizes of uncompressed diff and extra blocks.
+   * Their combined size is the new file segment length, and their individual
+     sizes can be computed from the ctrl block; but knowing them up front
+     might help if we want to do all the decompressions in parallel?
+
+A ctrl block is:
+  [ctrl tuple #0] || .. || [ctrl tuple #(M-1)]
+
+A ctrl tuple is:
+offset	length	value
+------	------	-----
+0	4	Distance to seek in the old data segment
+4	4	Length of copy-and-add-diffs
+8	4	Length of extra data to insert
