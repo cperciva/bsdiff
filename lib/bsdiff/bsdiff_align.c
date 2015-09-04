@@ -285,7 +285,7 @@ bsdiff_align(const uint8_t * new, size_t newsize,
 			if (old[i - 1 + (asegp2->opos - asegp2->npos)] == new[i - 1])
 				s++;
 			i--;
-			if (i + s >= asegp->npos + asegp->alen) {
+			if ((i + s >= asegp->npos + asegp->alen) && (i >= asegp->npos)) {
 				asegp->alen = i - asegp->npos;
 				s = 0;
 			}
