@@ -133,6 +133,7 @@ bsdiff_align_multi(const uint8_t * new, size_t newsize, const uint8_t * old,
 	size_t i, j;
 	BSDIFF_ALIGNMENT * BA;
 	BSDIFF_ALIGNMENT A;
+	struct bsdiff_alignseg * asegp;
 
 	/* Index the old file. */
 	printf("Indexing old file...\n");
@@ -184,10 +185,19 @@ bsdiff_align_multi(const uint8_t * new, size_t newsize, const uint8_t * old,
 	for (i = 0; i < nblocks; i++) {
 		/* Add these alignment segments to the whole-file alignment. */
 		for (j = 0; j < bsdiff_alignment_getsize(BA[i]); j++) {
-			if (bsdiff_alignment_append(A,
-			    bsdiff_alignment_get(BA[i], j), 1)) {
-				warnp("bsdiff_alignment_append");
-				goto err3;
+			asegp = bsdiff_alignment_get(BA[i], j);
+			if (asegp->alen) {
+				if (asegp->alen > 0x8000000000000000L)
+					/* Larger than 2^63 */
+					warnp("bsdiff_alignment_append: BA[%lu] segment size %lu",
+						  i, asegp->alen);
+				if (bsdiff_alignment_append(A,
+					bsdiff_alignment_get(BA[i], j), 1)) {
+					warnp("bsdiff_alignment_append");
+					goto err3;
+				}
+			} else {
+				warnp("bsdiff_alignment_append: skipped zero length alignment at BA[%lu]", i);
 			}
 		}
 	}
