@@ -29,6 +29,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "warnp.h"
+
 #include "bsdiff_alignment.h"
 #include "sufsort_qsufsort.h"
 
@@ -283,7 +285,7 @@ bsdiff_align(const uint8_t * new, size_t newsize,
 			if (old[i - 1 + (asegp2->opos - asegp2->npos)] == new[i - 1])
 				s++;
 			i--;
-			if (i + s >= asegp->npos + asegp->alen) {
+			if ((i + s >= asegp->npos + asegp->alen) && (i >= asegp->npos)) {
 				asegp->alen = i - asegp->npos;
 				s = 0;
 			}
@@ -294,7 +296,7 @@ bsdiff_align(const uint8_t * new, size_t newsize,
 	}
 
 	/* Delete any alignment segments which are now empty. */
-	for (k = j = 1; j + 1< bsdiff_alignment_getsize(A); j++) {
+	for (k = j = 0; j + 1< bsdiff_alignment_getsize(A); j++) {
 		asegp = bsdiff_alignment_get(A, k);
 		asegp2 = bsdiff_alignment_get(A, j + 1);
 
@@ -306,6 +308,17 @@ bsdiff_align(const uint8_t * new, size_t newsize,
 		memcpy(bsdiff_alignment_get(A, k), asegp2, sizeof(*asegp));
 	}
 	bsdiff_alignment_shrink(A, j - k);
+
+	/* Warn about any bad alignment lengths */
+	for (j = 0; j < bsdiff_alignment_getsize(A); j++) {
+		asegp = bsdiff_alignment_get(A, j);
+		if (asegp->alen == 0)
+			warnp("bsdiff_align: A[%lu] asegp->alen is zero");
+		else if (asegp->alen > (0x8000000000000000L))
+			/* Larger than 2^63 */
+			warnp("bsdiff_align: A[%lu] huge segment asegp->alen %lu",
+				  j, asegp->alen);
+	}
 
 	/* Free the suffix array. */
 	free(I);
